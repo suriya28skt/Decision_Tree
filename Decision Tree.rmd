@@ -1,0 +1,153 @@
+---
+title: "Decision Tree"
+author: "Suriya Prakaash SKT"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+---
+
+# Table of Contents
+
+### Setting Directory and creating dataframes for Training and Test
+```{r}
+setwd("C:/Users/ssund/Documents/R-Studio Directory")
+set.seed(1122)
+train <- read.csv("adult-train.csv")
+test <- read.csv("adult-test.csv")
+```
+
+### Cleaning Data
+```{r}
+train.oc <- with(train, which(train$occupation == "?"))
+train.final <- train[-train.oc, ]
+train.nc <- with(train.final, which(train.final$native_country == "?"))
+train.final <- train.final[-train.nc, ]
+
+test.oc <- with(test, which(test$occupation == "?"))
+test.final <- test[-test.oc, ]
+test.nc <- with(test.final, which(test.final$native_country == "?"))
+test.final <- test.final[-test.nc, ]
+
+install.packages("rpart.plot")
+library(rpart)
+library(rpart.plot)
+```
+
+### Training model using 'rpart'
+```{r}
+train.model <- rpart(income~., data = train.final, method = "class")
+```
+
+### Plotting the model
+```{r}
+rpart.plot(train.model ,type= 4, main = "Train decision tree", extra = 104, shadow.col = "grey")
+```
+
+### Important Predictors
+```{r}
+train.model$variable.importance[1:3]
+#Top 3 important preditors of the model are
+#1 Relationship
+#2 Martial Status
+#3 Capital Gain
+```
+
+### Summary of the model
+```{r}
+summary(train.model)
+# The first split is done on the predictor "Relationship"
+# The predicted class of the 1st Node is "<=50k"
+# The distribution of observations at 1st node <=50k and >50k are 0.75 and 0.25 respectively
+```
+
+### Predicting for training & test data and generating Confusion Matrix 
+```{r}
+#install.packages("caret")
+#install.packages('e1071', dependencies=TRUE)
+library(caret)
+train.predict <- predict(train.model, type = "class")
+test.predict <- predict(train.model,test.final, type = "class")
+test.cm <- confusionMatrix(test.predict,as.factor(test.final$income), dnn = c("Test Prediction", "Actual Values in Test"))
+test.cm
+```
+
+### Balanced Accuracy, Balanced Error Rate, Sensitivity and Specificity
+```{r}
+round(test.cm$byClass[11],digits = 3)
+#Balanced Accuracy is '0.726'
+#Balanced Error rate is '0.274' (1-Balanced Accuracy)
+round(test.cm$byClass[1],digits = 3)
+round(test.cm$byClass[2],digits = 3)
+#Sensitivity is '0.948' and Specificity is '0.504'
+```
+
+### ROC Curve
+```{r}
+#install.packages("bitops")
+library(bitops)
+#install.packages("gplots")
+library(gplots)
+#install.packages("ROCR")
+library(ROCR)
+#install.packages("pROC")
+library(pROC)
+
+pred.rocr <- predict(train.model, newdata = test.final, type = "prob")[,2]
+f.pred <- prediction(pred.rocr, test.final$income)
+f.perf <- performance(f.pred, "tpr", "fpr")
+plot(f.perf, colorize=T, lwd=3)
+abline(0,1)
+auc <- performance(f.pred, measure = "auc")
+cat(paste("The Area Under Curve (AUC) for this model is ", round(auc@y.values[[1]],3)))
+```
+
+### Other observations from the data
+```{r}
+cat("Number of observations in the training dataset with class '<=50K' are", sum(train.final$income == "<=50K"), '\n')
+cat("Number of observations in the training dataset with class '>50K' are", sum(train.final$income == ">50K"), '\n')
+
+lesser_equal <- which(train.final$income == "<=50K")
+greater <- which(train.final$income == ">50K")
+nsamp <- min(length(lesser_equal), length(greater))
+new_lesser_equal <- sample(lesser_equal, nsamp)
+new_greater <- sample(greater,nsamp)
+train.under <- train.final[c(new_lesser_equal,new_greater), ]
+cat("Number of observations in the new training dataset with class '>50K' are", sum(train.under$income == ">50K" ), '\n')
+cat("Number of observations in the new training dataset with class '<=50K' are", sum(train.under$income == "<=50K" ), '\n')
+
+train.under.model <- rpart(income~., data = train.under, method = "class")
+test.under.predict <- predict(train.under.model,test.final, type = "class")
+test.under.cm <- confusionMatrix(test.under.predict,as.factor(test.final$income), dnn = c("Test Prediction", "Actual Values in Test"))
+test.under.cm
+
+#Balanced Accuracy is
+round(test.under.cm$byClass[11], digits = 3)
+
+#Balanced Error Rate is 0.191 (1-Balanced Accuracy Rate)
+
+round(test.under.cm$byClass[1],digits = 3)
+round(test.under.cm$byClass[2],digits = 3)
+#Sensitivity is '0.779' and Specificity is '0.839'
+
+#ROC Curve
+pred.under.rocr <- predict(train.under.model, newdata = test.final, type = "prob")[,2]
+f.under.pred <- prediction(pred.under.rocr, test.final$income)
+f.under.perf <- performance(f.under.pred, "tpr", "fpr")
+plot(f.under.perf, colorize=T, lwd=3)
+abline(0,1)
+auc.under <- performance(f.under.pred, measure = "auc")
+cat(paste("The Area Under Curve (AUC) for this model is ", round(auc.under@y.values[[1]],3)))
+
+#Balanced Accuracy has increased in the new dataset used in (d) than the balanced accuracy in (c), which means the model in (d) is better than the model in (c).
+#Sensitivty of the model with balanced dataset (d) is less than the model with imbalanced dataset (c), which means the True Positive rate has increased for the model with balanced dataset.
+#Specificity of the model in (d) is higher than the specificity of the model in (c), which means True Negative Rate has increased for the model with balanced dataset.
+round(test.cm$byClass[3],digits = 3)
+round(test.under.cm$byClass[3],digits = 3)
+#Positive Predictive value of model in (d) is '0.952' and it is higher than the predictive value of the model in (c) which is '0.854', which means that correct positive predictions in model (d) is higher than the correct positive predictions in model (c).
+#AUC of model in (d) is bit higher than the AUC of model in (c), which means the model in (d) is more towards the Actual Class than the model in (c).
+```
